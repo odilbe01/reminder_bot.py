@@ -66,7 +66,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     offset = parse_offset(text)
 
     if pu_time and offset:
-        notify_time = pu_time - offset
+        notify_time = pu_time - offset - timedelta(minutes=10)
         if update.message.photo:
             file_id = update.message.photo[-1].file_id
             logging.info(f"[LOG] file_id = {file_id}")
