@@ -12,18 +12,18 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# --- LOAD ENV ---
+# --- 1. ENV VA TOKEN O‘QISH ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# --- LOGGING ---
+# --- 2. LOGGING ---
 logging.basicConfig(level=logging.INFO)
 
-# --- APSCHEDULER ---
+# --- 3. SCHEDULER ISHLATISH ---
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# --- TIMEZONE MAP ---
+# --- 4. TIMEZONE MAP ---
 TIMEZONE_MAP = {
     'PDT': 'America/Los_Angeles',
     'PST': 'America/Los_Angeles',
@@ -33,7 +33,7 @@ TIMEZONE_MAP = {
     'CST': 'America/Chicago',
 }
 
-# --- PARSE PU TIME ---
+# --- 5. PU TIME PARSER ---
 def parse_pu_time(text: str):
     match = re.search(r"PU:\s*(.+?\d{2}:\d{2})\s+([A-Z]+)", text)
     if not match:
@@ -50,7 +50,7 @@ def parse_pu_time(text: str):
         print("Error parsing PU time:", e)
         return None
 
-# --- PARSE OFFSET ---
+# --- 6. OFFSET PARSER ---
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -61,7 +61,7 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# --- REMINDER FUNKSIYASI (ASYNC-READY) ---
+# --- 7. REMINDER FUNCTION ASYNC ---
 def schedule_reminder(application, chat_id, file_id, remind_time):
     async def send():
         try:
@@ -75,13 +75,9 @@ def schedule_reminder(application, chat_id, file_id, remind_time):
         except Exception as e:
             print("Error sending reminder:", e)
 
-    scheduler.add_job(
-        lambda: asyncio.run(send()),
-        trigger="date",
-        run_date=remind_time
-    )
+    scheduler.add_job(lambda: asyncio.run(send()), trigger="date", run_date=remind_time)
 
-# --- HANDLE MESSAGE ---
+# --- 8. HANDLE MESSAGE FUNCTION ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message.photo:
@@ -92,13 +88,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = caption + "\n" + (message.text or "")
     text_upper = text.upper()
 
-    # ✅ YANGI JAVOB — REPLACE OLD MESSAGE
+    # ✅ Javob berish
     await message.reply_text("CHECK WITH DRIVER AND BE READY")
-
-    # ✅ Reply to photo with "Noted"
     await context.bot.send_message(chat_id=chat_id, text="Noted", reply_to_message_id=message.message_id)
 
-    # 🔍 PU time va offset ni parse qilish
+    # ⏰ PU va OFFSET ajratish
     pu_time = parse_pu_time(text_upper)
     offset = parse_offset(text_upper)
 
@@ -113,12 +107,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"✅ Reminder scheduled for {remind_time.strftime('%Y-%m-%d %H:%M')}"
         )
     else:
-        await context.bot.send_message(chat_id=chat_id, text="❌ Failed to schedule reminder. Make sure PU time and offset are in correct format.")
+        await context.bot.send_message(chat_id=chat_id, text="❌ PU time or offset not recognized. Format: PU: Mon May 13 20:30 EDT + offset like 2h or 30m")
 
-# --- START BOT ---
+# --- 9. START BOT ---
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
     print("🚛 Scheduling Bot is running...")
     app.run_polling()
-
