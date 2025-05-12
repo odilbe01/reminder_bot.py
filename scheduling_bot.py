@@ -6,7 +6,8 @@ import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
-from telegram import Update, ChatAction
+from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder, MessageHandler, ContextTypes, filters
 )
