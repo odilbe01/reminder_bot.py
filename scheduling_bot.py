@@ -1,4 +1,8 @@
-import logging, os, re, pytz, asyncio
+import os
+import re
+import pytz
+import asyncio
+import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telegram import Update
@@ -7,14 +11,14 @@ from telegram.ext import (
     ApplicationBuilder, MessageHandler, ContextTypes, filters
 )
 
-# === 1. ENV / TOKEN ===
+# 1. ENV dan tokenni o‘qish
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# === 2. LOGGING ===
+# 2. Log sozlash
 logging.basicConfig(level=logging.INFO)
 
-# === 3. TIMEZONE MAP ===
+# 3. Timezone mapping
 TIMEZONE_MAP = {
     'EDT': 'America/New_York',
     'EST': 'America/New_York',
@@ -24,7 +28,7 @@ TIMEZONE_MAP = {
     'CST': 'America/Chicago',
 }
 
-# === 4. PU VA OFFSET PARSER ===
+# 4. PU vaqtni ajratish
 def parse_pu_time(text: str):
     match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*([A-Z]+)", text)
     if not match:
@@ -38,9 +42,10 @@ def parse_pu_time(text: str):
             return None
         return pytz.timezone(tz_name).localize(dt)
     except Exception as e:
-        print("❌ PU parsing error:", e)
+        print("PU parsing error:", e)
         return None
 
+# 5. Offsetni ajratish
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -51,35 +56,36 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# === 5. REMINDER TASK ===
-async def send_reminder(bot, chat_id, reply_id, delay_seconds):
-    print(f"⏳ Sleeping for {delay_seconds} seconds")
+# 6. Reminder jo‘natish funksiyasi
+async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     await asyncio.sleep(delay_seconds)
-    print("⏰ Sending reminder now!")
-
     try:
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await bot.send_message(
             chat_id=chat_id,
             text="🚨 Reminder: Load AI time is close. Please be ready.",
-            reply_to_message_id=reply_id
+            reply_to_message_id=reply_to
         )
+        print("✅ Reminder sent.")
     except Exception as e:
-        print("❌ Reminder send error:", e)
+        print("❌ Reminder failed:", e)
 
-# === 6. MESSAGE HANDLER ===
+# 7. Har rasm kelganda ishlaydigan funksiyasi
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message.photo:
+    msg = update.message
+    if not msg.photo:
         return
 
-    chat_id = message.chat_id
-    text = (message.caption or "") + "\n" + (message.text or "")
+    chat_id = msg.chat_id
+    reply_to_id = msg.message_id
+    caption = msg.caption or ""
+    text = caption + "\n" + (msg.text or "")
     text_upper = text.upper()
-    reply_id = message.message_id
 
-    await context.bot.send_message(chat_id=chat_id, text="Noted")
+    # 1. Reply qilib Noted yozish
+    await context.bot.send_message(chat_id=chat_id, text="Noted", reply_to_message_id=reply_to_id)
 
+    # 2. PU va offsetni ajratish
     pu_time = parse_pu_time(text_upper)
     offset = parse_offset(text_upper)
 
@@ -90,21 +96,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         delay = (remind_time_utc - now_utc).total_seconds()
 
-        print("📌 PU:", pu_time)
-        print("🕒 Offset:", offset)
-        print("🕑 Reminder:", remind_time_utc)
-        print("🕓 Now UTC:", now_utc)
+        print("PU:", pu_time)
+        print("Offset:", offset)
+        print("Reminder UTC:", remind_time_utc)
+        print("Now UTC:", now_utc)
+        print("Delay:", delay)
 
         if delay > 0:
             context.application.create_task(
-                send_reminder(context.bot, chat_id, reply_id, delay)
+                send_reminder(context.bot, chat_id, reply_to_id, delay)
             )
         else:
-            print("⚠️ Reminder skipped (past time)")
+            print("⚠️ Reminder skipped: past time")
+    else:
+        print("❌ PU yoki offset topilmadi")
 
-# === 7. START ===
+# 8. Botni ishga tushirish
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
-    print("🚛 Async Reminder Bot is running...")
+    print("🚛 Bot is running...")
     app.run_polling()
