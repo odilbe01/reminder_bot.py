@@ -56,7 +56,7 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# === 7. REMINDER FUNKSIYA ===
+# === 7. REMINDER FUNKSIYASI ===
 def schedule_reminder(application, chat_id, reply_id, remind_time):
     async def send():
         try:
@@ -69,9 +69,10 @@ def schedule_reminder(application, chat_id, reply_id, remind_time):
             )
         except Exception as e:
             print("❌ Reminder error:", e)
+
     scheduler.add_job(lambda: asyncio.run(send()), trigger="date", run_date=remind_time)
 
-# === 8. MESSAGE HANDLER ===
+# === 8. HANDLE MESSAGE ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message.photo:
@@ -89,8 +90,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pu_time and offset.total_seconds() > 0:
         remind_time = pu_time - offset - timedelta(minutes=10)
-        if remind_time > datetime.now(pytz.utc):
-            schedule_reminder(context.application, chat_id, reply_id, remind_time)
+        remind_time_utc = remind_time.astimezone(pytz.utc)
+
+        print("📌 PU:", pu_time)
+        print("🕒 Offset:", offset)
+        print("🕑 Reminder:", remind_time_utc)
+        print("🕓 Now UTC:", datetime.now(pytz.utc))
+
+        if remind_time_utc > datetime.now(pytz.utc):
+            schedule_reminder(context.application, chat_id, reply_id, remind_time_utc)
         else:
             print("⚠️ Reminder skipped (past time)")
 
