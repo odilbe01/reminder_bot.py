@@ -11,14 +11,14 @@ from telegram.ext import (
     ApplicationBuilder, MessageHandler, ContextTypes, filters
 )
 
-# 1. ENV dan tokenni o‘qish
+# ENV dan tokenni o‘qish
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# 2. Log sozlash
+# Log sozlash
 logging.basicConfig(level=logging.INFO)
 
-# 3. Timezone mapping
+# Timezone mapping
 TIMEZONE_MAP = {
     'EDT': 'America/New_York',
     'EST': 'America/New_York',
@@ -28,7 +28,7 @@ TIMEZONE_MAP = {
     'CST': 'America/Chicago',
 }
 
-# 4. PU vaqtni ajratish
+# PU vaqtni ajratish
 def parse_pu_time(text: str):
     match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*([A-Z]+)", text)
     if not match:
@@ -45,7 +45,7 @@ def parse_pu_time(text: str):
         print("PU parsing error:", e)
         return None
 
-# 5. Offsetni ajratish
+# Offsetni ajratish
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -56,7 +56,7 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# 6. Reminder jo‘natish funksiyasi
+# Reminder jo‘natish funksiyasi
 async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     await asyncio.sleep(delay_seconds)
     try:
@@ -70,7 +70,7 @@ async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     except Exception as e:
         print("❌ Reminder failed:", e)
 
-# 7. Har rasm kelganda ishlaydigan funksiyasi
+# Har rasm kelganda ishlaydigan funksiyasi
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg.photo:
@@ -82,10 +82,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = caption + "\n" + (msg.text or "")
     text_upper = text.upper()
 
-    # 1. Reply qilib Noted yozish
+    # Reply qilib Noted yozish
     await context.bot.send_message(chat_id=chat_id, text="Noted", reply_to_message_id=reply_to_id)
 
-    # 2. PU va offsetni ajratish
+    # PU va offsetni ajratish
     pu_time = parse_pu_time(text_upper)
     offset = parse_offset(text_upper)
 
@@ -111,9 +111,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print("❌ PU yoki offset topilmadi")
 
-# 8. Botni ishga tushirish
+# Botni ishga tushirish
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
-    print("🚛 Bot is running...")
+    print("🚛 Scheduling Bot is running...")
     app.run_polling()
