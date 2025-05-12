@@ -11,14 +11,14 @@ from telegram.ext import (
     ApplicationBuilder, MessageHandler, ContextTypes, filters
 )
 
-# ENV dan tokenni o‘qish
+# ✅ ENV dan tokenni o‘qish
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Log sozlash
+# ✅ Log sozlash
 logging.basicConfig(level=logging.INFO)
 
-# Timezone mapping
+# ✅ Timezone mapping
 TIMEZONE_MAP = {
     'EDT': 'America/New_York',
     'EST': 'America/New_York',
@@ -28,6 +28,7 @@ TIMEZONE_MAP = {
     'CST': 'America/Chicago',
 }
 
+# ✅ PU vaqtini parse qilish
 def parse_pu_time(text: str):
     match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*([A-Z]+)", text)
     if not match:
@@ -44,6 +45,7 @@ def parse_pu_time(text: str):
         print("PU parsing error:", e)
         return None
 
+# ✅ Offset ni parse qilish (2h, 30m, 1h 30m)
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -54,6 +56,7 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
+# ✅ Reminder yuborish
 async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     await asyncio.sleep(delay_seconds)
     try:
@@ -67,6 +70,7 @@ async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     except Exception as e:
         print("❌ Reminder failed:", e)
 
+# ✅ Rasm kelganda ishlovchi handler
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg.photo:
@@ -104,6 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print("❌ PU yoki offset topilmadi")
 
+# ✅ Botni ishga tushurish
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
