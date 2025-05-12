@@ -28,7 +28,6 @@ TIMEZONE_MAP = {
     'CST': 'America/Chicago',
 }
 
-# PU vaqtni ajratish
 def parse_pu_time(text: str):
     match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*([A-Z]+)", text)
     if not match:
@@ -45,7 +44,6 @@ def parse_pu_time(text: str):
         print("PU parsing error:", e)
         return None
 
-# Offsetni ajratish
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -56,7 +54,6 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# Reminder jo‘natish funksiyasi
 async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     await asyncio.sleep(delay_seconds)
     try:
@@ -70,7 +67,6 @@ async def send_reminder(bot, chat_id, reply_to, delay_seconds):
     except Exception as e:
         print("❌ Reminder failed:", e)
 
-# Har rasm kelganda ishlaydigan funksiyasi
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg.photo:
@@ -82,10 +78,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = caption + "\n" + (msg.text or "")
     text_upper = text.upper()
 
-    # Reply qilib Noted yozish
     await context.bot.send_message(chat_id=chat_id, text="Noted", reply_to_message_id=reply_to_id)
 
-    # PU va offsetni ajratish
     pu_time = parse_pu_time(text_upper)
     offset = parse_offset(text_upper)
 
@@ -93,14 +87,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         remind_time = pu_time - offset - timedelta(minutes=10)
         remind_time_utc = remind_time.astimezone(pytz.utc)
         now_utc = datetime.now(pytz.utc)
-
         delay = (remind_time_utc - now_utc).total_seconds()
 
-        print("PU:", pu_time)
-        print("Offset:", offset)
-        print("Reminder UTC:", remind_time_utc)
-        print("Now UTC:", now_utc)
-        print("Delay:", delay)
+        print("📦 PU:", pu_time)
+        print("⏱ Offset:", offset)
+        print("⏰ Reminder UTC:", remind_time_utc)
+        print("🕒 Now UTC:", now_utc)
+        print("⌛ Delay (seconds):", delay)
 
         if delay > 0:
             context.application.create_task(
@@ -111,7 +104,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print("❌ PU yoki offset topilmadi")
 
-# Botni ishga tushirish
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
