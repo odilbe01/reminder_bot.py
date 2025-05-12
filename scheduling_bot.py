@@ -8,30 +8,30 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# --- ENV ---
+# === 1. ENV / TOKEN ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# --- LOGGING ---
+# === 2. LOGGING ===
 logging.basicConfig(level=logging.INFO)
 
-# --- SCHEDULER ---
+# === 3. SCHEDULER ===
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# --- TIMEZONE MAP ---
+# === 4. TIMEZONE MAP ===
 TIMEZONE_MAP = {
-    'PDT': 'America/Los_Angeles',
-    'PST': 'America/Los_Angeles',
     'EDT': 'America/New_York',
     'EST': 'America/New_York',
+    'PDT': 'America/Los_Angeles',
+    'PST': 'America/Los_Angeles',
     'CDT': 'America/Chicago',
     'CST': 'America/Chicago',
 }
 
-# --- PARSE PU ---
+# === 5. PU VAQT PARSER ===
 def parse_pu_time(text: str):
-    match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*\+?\s*([A-Z]+)", text)
+    match = re.search(r"PU:\s*([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2})\s*([A-Z]+)", text)
     if not match:
         return None
     time_str, tz_abbr = match.groups()
@@ -45,7 +45,7 @@ def parse_pu_time(text: str):
     except:
         return None
 
-# --- PARSE OFFSET ---
+# === 6. OFFSET PARSER ===
 def parse_offset(text: str):
     h = m = 0
     h_match = re.search(r"(\d+)\s*h", text)
@@ -56,45 +56,45 @@ def parse_offset(text: str):
         m = int(m_match.group(1))
     return timedelta(hours=h, minutes=m)
 
-# --- SCHEDULE REMINDER ---
-def schedule_reminder(application, chat_id, file_id, remind_time):
+# === 7. REMINDER FUNKSIYA ===
+def schedule_reminder(application, chat_id, reply_id, remind_time):
     async def send():
         try:
             bot = application.bot
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
-            await bot.send_photo(
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await bot.send_message(
                 chat_id=chat_id,
-                photo=file_id,
-                caption="🚨 Reminder: Load pickup time is close. Please be ready."
+                text="🚨 Reminder: Load AI time is close. Please be ready.",
+                reply_to_message_id=reply_id
             )
         except Exception as e:
-            print("Reminder error:", e)
+            print("❌ Reminder error:", e)
     scheduler.add_job(lambda: asyncio.run(send()), trigger="date", run_date=remind_time)
 
-# --- HANDLE MESSAGE ---
+# === 8. MESSAGE HANDLER ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message.photo:
         return
 
     chat_id = message.chat_id
-    caption = message.caption or ""
-    text = caption + "\n" + (message.text or "")
+    text = (message.caption or "") + "\n" + (message.text or "")
     text_upper = text.upper()
+    reply_id = message.message_id
 
-    # 📌 Faqat NOTED yozadi (oddiy xabar)
     await context.bot.send_message(chat_id=chat_id, text="Noted")
 
-    # 🔍 PU va offsetni o‘qish
     pu_time = parse_pu_time(text_upper)
     offset = parse_offset(text_upper)
 
     if pu_time and offset.total_seconds() > 0:
         remind_time = pu_time - offset - timedelta(minutes=10)
-        file_id = message.photo[-1].file_id
-        schedule_reminder(context.application, chat_id, file_id, remind_time)
+        if remind_time > datetime.now(pytz.utc):
+            schedule_reminder(context.application, chat_id, reply_id, remind_time)
+        else:
+            print("⚠️ Reminder skipped (past time)")
 
-# --- START BOT ---
+# === 9. START ===
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
