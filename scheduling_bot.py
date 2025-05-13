@@ -26,7 +26,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     caption = update.message.caption.strip()
-    match = re.match(r"PU:\s+([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}) EDT\n([\dhm\s]+)", caption)
+
+    # Case-insensitive, flexible match
+    match = re.match(r"PU:\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2})\s+EDT\s*\n([\dhm\s]+)", caption, re.IGNORECASE)
 
     if not match:
         await update.message.reply_text("❌ Reminder skipped.")
@@ -35,20 +37,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pu_str, offset_str = match.groups()
 
     try:
-        # Parse PU datetime as EDT
+        # Normalize to title-case: e.g. mon → Mon
+        pu_str = ' '.join(word.capitalize() for word in pu_str.split())
         pu_dt_naive = datetime.strptime(pu_str, "%a %b %d %H:%M")
         edt = timezone("America/New_York")
         pu_dt = edt.localize(pu_dt_naive)
 
         # Offset parsing
         offset_td = timedelta()
-        for part in offset_str.split():
+        for part in offset_str.lower().split():
             if 'h' in part:
                 offset_td += timedelta(hours=int(part.replace('h', '')))
             if 'm' in part:
                 offset_td += timedelta(minutes=int(part.replace('m', '')))
 
-        # Reminder time = PU - offset - 10m
+        # Reminder = PU - offset - 10 minutes
         reminder_dt = pu_dt - offset_td - timedelta(minutes=10)
         reminder_utc = reminder_dt.astimezone(utc)
 
@@ -57,7 +60,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Reminder skipped.")
             return
 
-        # Schedule message
+        # Schedule reminder
         chat_id = update.effective_chat.id
 
         def send_reminder():
