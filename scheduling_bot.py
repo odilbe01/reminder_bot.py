@@ -1,4 +1,5 @@
 import logging
+import os
 import pytz
 import re
 from datetime import datetime, timedelta
@@ -11,20 +12,12 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# Token hardcoded
-TOKEN = "8150025447:AAGOe4Uc3ZS2eQsmI_dsCIfRwRPxkuZF00g"
+# ====================== CONFIGURATION ======================
 
-# Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Telegram bot token from environment variable
+TOKEN = os.environ.get("BOT_TOKEN")  # Render > Environment Variables dan oladi
 
-# Scheduler
-scheduler = BackgroundScheduler(timezone='UTC')
-scheduler.start()
-
-# Timezone mapping
+# Timezone offset mapping
 timezone_mapping = {
     "EDT": -4, "EST": -5,
     "CDT": -5, "CST": -6,
@@ -32,77 +25,100 @@ timezone_mapping = {
     "PDT": -7, "PST": -8,
 }
 
-# Reminder function
+# ====================== LOGGING ======================
+
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# ====================== SCHEDULER ======================
+
+scheduler = BackgroundScheduler(timezone='UTC')
+scheduler.start()
+
+# ====================== REMINDER FUNCTION ======================
+
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=context.job.chat_id, text="🚨 PLEASE BE READY, LOAD AI TIME IS CLOSE!")
 
-# Handle incoming photo+caption messages
+# ====================== MESSAGE HANDLER ======================
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.caption:
+    message = update.message
+    if not message or not message.caption:
         return
 
-    lines = update.message.caption.strip().split("\n")
+    lines = message.caption.strip().split("\n")
     if len(lines) < 2:
-        await update.message.reply_text("❌ Reminder skipped.")
+        await message.reply_text("❌ Reminder skipped.")
         return
 
     pu_line = lines[0].strip()
     offset_line = lines[1].strip()
 
     try:
-        # Parse PU line
+        # Parse PU line: PU: Mon May 13 14:40 EDT
         match = re.match(r"PU:\s+(\w{3}) (\w{3}) (\d{1,2}) (\d{2}:\d{2}) (\w{3})", pu_line)
         if not match:
-            raise ValueError("Invalid PU format.")
+            raise ValueError("❌ Invalid PU format.")
 
         dow, mon, day, time_str, tz_abbr = match.groups()
+
+        # Parse offset like "2h 15m", "1h", or "30m"
         offset_hours, offset_minutes = 0, 0
-
-        # Parse offset
-        hour_match = re.findall(r"(\d+)\s*h", offset_line)
+        hour_match = re.search(r"(\d+)\s*h", offset_line)
         if hour_match:
-            offset_hours = int(hour_match[0])
-        minute_match = re.findall(r"(\d+)\s*m", offset_line)
+            offset_hours = int(hour_match.group(1))
+        minute_match = re.search(r"(\d+)\s*m", offset_line)
         if minute_match:
-            offset_minutes = int(minute_match[0])
+            offset_minutes = int(minute_match.group(1))
 
-        # Convert PU time to UTC
+        # Create datetime object in UTC
         full_time_str = f"{mon} {day} {datetime.now().year} {time_str}"
         local_dt = datetime.strptime(full_time_str, "%b %d %Y %H:%M")
         if tz_abbr not in timezone_mapping:
-            raise ValueError("Unsupported timezone.")
+            raise ValueError("❌ Unsupported timezone.")
         utc_dt = local_dt - timedelta(hours=timezone_mapping[tz_abbr])
-        reminder_time_utc = utc_dt - timedelta(hours=offset_hours, minutes=offset_minutes)
+        reminder_time = utc_dt - timedelta(hours=offset_hours, minutes=offset_minutes)
 
         now_utc = datetime.utcnow()
-        delay = (reminder_time_utc - now_utc).total_seconds()
+        delay_seconds = (reminder_time - now_utc).total_seconds()
 
-        logging.info(f"⏰ Reminder UTC: {reminder_time_utc}")
+        logging.info(f"⏰ Reminder UTC: {reminder_time}")
         logging.info(f"🕒 Now UTC: {now_utc}")
-        logging.info(f"⌛ Delay (seconds): {delay}")
+        logging.info(f"⌛ Delay (s): {delay_seconds}")
 
-        if delay <= 0:
-            await update.message.reply_text("❌ Reminder skipped.")
+        if delay_seconds <= 0:
+            await message.reply_text("❌ Reminder skipped.")
             return
 
-        # Schedule reminder
+        # Schedule the reminder
         scheduler.add_job(
             send_reminder,
             trigger='date',
-            run_date=reminder_time_utc,
+            run_date=reminder_time,
             args=[context],
-            kwargs={'job': type("obj", (object,), {"chat_id": update.message.chat_id})}
+            kwargs={'job': type("obj", (object,), {"chat_id": message.chat_id})}
         )
 
-        await update.message.reply_text("✅ Reminder scheduled.")
+        await message.reply_text("✅ Reminder scheduled.")
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        await update.message.reply_text("❌ Reminder skipped.")
+        await message.reply_text("❌ Reminder skipped.")
 
-# Run the bot
+# ====================== ERROR HANDLER ======================
+
+def error_handler(update, context):
+    logging.error(msg="Unhandled exception:", exc_info=context.error)
+
+# ====================== MAIN ======================
+
 if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.PHOTO & filters.Caption(True), handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.Caption(), handle_message))
+    app.add_error_handler(error_handler)
+
     print("✅ Bot is running...")
     app.run_polling()
