@@ -6,18 +6,20 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# TOKEN (shaxsiy)
+# TOKEN
 TOKEN = "8150025447:AAGOe4Uc3ZS2eQsmI_dsCIfRwRPxkuZF00g"
 
 # Logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Apscheduler — eslatmalar uchun
+# Scheduler
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# Reminder text
 REMINDER_TEXT = "PLEASE BE READY, LOAD AI TIME IS CLOSE!"
 
 # Message handler
@@ -27,19 +29,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     caption = update.message.caption.strip()
 
-    # Case-insensitive, flexible match
-    match = re.match(r"PU:\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2})\s+EDT\s*\n([\dhm\s]+)", caption, re.IGNORECASE)
+    # Case-insensitive and optional newline between EDT and offset
+    match = re.match(
+        r"PU:\s+([A-Za-z]{3})\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{2}:\d{2})\s+EDT\s*\n?([\dhm\s]+)",
+        caption,
+        re.IGNORECASE
+    )
 
     if not match:
         await update.message.reply_text("❌ Reminder skipped.")
         return
 
-    pu_str, offset_str = match.groups()
-
     try:
-        # Normalize to title-case: e.g. mon → Mon
-        pu_str = ' '.join(word.capitalize() for word in pu_str.split())
-        pu_dt_naive = datetime.strptime(pu_str, "%a %b %d %H:%M")
+        day_str, month_str, day_num, time_str, offset_str = match.groups()
+
+        # Capitalize to normalize input
+        day_str = day_str.capitalize()
+        month_str = month_str.capitalize()
+        this_year = datetime.now().year
+
+        # PU time
+        datetime_str = f"{day_str} {month_str} {int(day_num)} {time_str} {this_year}"
+        pu_dt_naive = datetime.strptime(datetime_str, "%a %b %d %H:%M %Y")
         edt = timezone("America/New_York")
         pu_dt = edt.localize(pu_dt_naive)
 
@@ -48,19 +59,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for part in offset_str.lower().split():
             if 'h' in part:
                 offset_td += timedelta(hours=int(part.replace('h', '')))
-            if 'm' in part:
+            elif 'm' in part:
                 offset_td += timedelta(minutes=int(part.replace('m', '')))
 
-        # Reminder = PU - offset - 10 minutes
+        # Reminder = PU - offset - 10m
         reminder_dt = pu_dt - offset_td - timedelta(minutes=10)
         reminder_utc = reminder_dt.astimezone(utc)
-
         now_utc = datetime.now(utc)
+
+        # Logging actual times for debugging
+        logger.info(f"PU EDT: {pu_dt}")
+        logger.info(f"Reminder UTC: {reminder_utc}")
+        logger.info(f"Now UTC: {now_utc}")
+        logger.info(f"Delay (seconds): {(reminder_utc - now_utc).total_seconds()}")
+
         if reminder_utc < now_utc:
             await update.message.reply_text("❌ Reminder skipped.")
             return
 
-        # Schedule reminder
         chat_id = update.effective_chat.id
 
         def send_reminder():
@@ -70,7 +86,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Reminder scheduled.")
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Reminder error: {e}")
         await update.message.reply_text("❌ Reminder skipped.")
 
 # Run bot
