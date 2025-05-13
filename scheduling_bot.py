@@ -1,127 +1,77 @@
 import logging
-import os
 import re
 from datetime import datetime, timedelta
+from pytz import timezone, utc
 from telegram import Update
-from telegram.ext import (
-    Application,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# ====================== CONFIG ======================
+# TOKEN (shaxsiy)
+TOKEN = "8150025447:AAGOe4Uc3ZS2eQsmI_dsCIfRwRPxkuZF00g"
 
-# Get bot token from environment variable
-TOKEN = os.environ.get("BOT_TOKEN")
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Timezone offsets (EDT = UTC-4, PST = UTC-8, etc.)
-timezone_mapping = {
-    "EDT": -4, "EST": -5,
-    "CDT": -5, "CST": -6,
-    "MDT": -6, "MST": -7,
-    "PDT": -7, "PST": -8,
-}
-
-# ====================== LOGGING ======================
-
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# ====================== SCHEDULER ======================
-
-scheduler = BackgroundScheduler(timezone='UTC')
+# Apscheduler — eslatmalar uchun
+scheduler = BackgroundScheduler()
 scheduler.start()
 
-# ====================== REMINDER FUNCTION ======================
+# Reminder text
+REMINDER_TEXT = "PLEASE BE READY, LOAD AI TIME IS CLOSE!"
 
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text="🚨 PLEASE BE READY, LOAD AI TIME IS CLOSE!"
-    )
-
-# ====================== MESSAGE HANDLER ======================
-
+# Message handler
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message or not message.caption:
+    if not update.message.caption:
         return
 
-    lines = message.caption.strip().split("\n")
-    if len(lines) < 2:
-        await message.reply_text("❌ Reminder skipped.")
+    caption = update.message.caption.strip()
+    match = re.match(r"PU:\s+([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}) EDT\n([\dhm\s]+)", caption)
+
+    if not match:
+        await update.message.reply_text("❌ Reminder skipped.")
         return
 
-    pu_line = lines[0].strip()
-    offset_line = lines[1].strip()
+    pu_str, offset_str = match.groups()
 
     try:
-        # Format: PU: Tue May 14 2025 15:30 EDT
-        match = re.match(
-            r"PU:\s+(\w{3}) (\w{3}) (\d{1,2}) (\d{4}) (\d{2}:\d{2}) (\w{3})",
-            pu_line
-        )
-        if not match:
-            raise ValueError("❌ Invalid PU format.")
+        # Parse PU datetime as EDT
+        pu_dt_naive = datetime.strptime(pu_str, "%a %b %d %H:%M")
+        edt = timezone("America/New_York")
+        pu_dt = edt.localize(pu_dt_naive)
 
-        dow, mon, day, year, time_str, tz_abbr = match.groups()
-        offset_hours, offset_minutes = 0, 0
+        # Offset parsing
+        offset_td = timedelta()
+        for part in offset_str.split():
+            if 'h' in part:
+                offset_td += timedelta(hours=int(part.replace('h', '')))
+            if 'm' in part:
+                offset_td += timedelta(minutes=int(part.replace('m', '')))
 
-        hour_match = re.search(r"(\d+)\s*h", offset_line)
-        if hour_match:
-            offset_hours = int(hour_match.group(1))
-        minute_match = re.search(r"(\d+)\s*m", offset_line)
-        if minute_match:
-            offset_minutes = int(minute_match.group(1))
+        # Reminder time = PU - offset - 10m
+        reminder_dt = pu_dt - offset_td - timedelta(minutes=10)
+        reminder_utc = reminder_dt.astimezone(utc)
 
-        full_time_str = f"{mon} {day} {year} {time_str}"
-        local_dt = datetime.strptime(full_time_str, "%b %d %Y %H:%M")
-        if tz_abbr not in timezone_mapping:
-            raise ValueError("❌ Unsupported timezone.")
-
-        utc_dt = local_dt - timedelta(hours=timezone_mapping[tz_abbr])
-        reminder_time = utc_dt - timedelta(hours=offset_hours, minutes=offset_minutes)
-
-        now_utc = datetime.utcnow()
-        delay_seconds = (reminder_time - now_utc).total_seconds()
-
-        logging.info(f"⏰ Reminder UTC: {reminder_time}")
-        logging.info(f"🕒 Now UTC: {now_utc}")
-        logging.info(f"⌛ Delay (s): {delay_seconds}")
-
-        if delay_seconds <= 0:
-            await message.reply_text("❌ Reminder skipped.")
+        now_utc = datetime.now(utc)
+        if reminder_utc < now_utc:
+            await update.message.reply_text("❌ Reminder skipped.")
             return
 
-        scheduler.add_job(
-            send_reminder,
-            trigger='date',
-            run_date=reminder_time,
-            args=[context],
-            kwargs={'job': type("job", (object,), {"chat_id": message.chat_id})}
-        )
+        # Schedule message
+        chat_id = update.effective_chat.id
 
-        await message.reply_text("✅ Reminder scheduled.")
+        def send_reminder():
+            context.bot.send_message(chat_id=chat_id, text=REMINDER_TEXT)
+
+        scheduler.add_job(send_reminder, trigger='date', run_date=reminder_utc)
+        await update.message.reply_text("✅ Reminder scheduled.")
 
     except Exception as e:
-        logging.error(f"❌ Error: {e}")
-        await message.reply_text("❌ Reminder skipped.")
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("❌ Reminder skipped.")
 
-# ====================== ERROR HANDLER ======================
-
-def error_handler(update, context):
-    logging.error(msg="Unhandled exception:", exc_info=context.error)
-
-# ====================== MAIN ======================
-
+# Run bot
 if __name__ == "__main__":
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.PHOTO & filters.Caption(), handle_message))
-    app.add_error_handler(error_handler)
-
-    print("✅ Bot is running...")
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(MessageHandler(filters.PHOTO, handle_message))
     app.run_polling()
