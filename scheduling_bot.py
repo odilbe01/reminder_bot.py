@@ -1,16 +1,18 @@
 import logging
-import os
 import pytz
 import re
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     ContextTypes,
     MessageHandler,
     filters,
 )
 from apscheduler.schedulers.background import BackgroundScheduler
+
+# Token hardcoded
+TOKEN = "8150025447:AAGOe4Uc3ZS2eQsmI_dsCIfRwRPxkuZF00g"
 
 # Logging
 logging.basicConfig(
@@ -24,21 +26,17 @@ scheduler.start()
 
 # Timezone mapping
 timezone_mapping = {
-    "EDT": -4,
-    "EST": -5,
-    "CDT": -5,
-    "CST": -6,
-    "MDT": -6,
-    "MST": -7,
-    "PDT": -7,
-    "PST": -8,
+    "EDT": -4, "EST": -5,
+    "CDT": -5, "CST": -6,
+    "MDT": -6, "MST": -7,
+    "PDT": -7, "PST": -8,
 }
 
 # Reminder function
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=context.job.chat_id, text="🚨 PLEASE BE READY, LOAD AI TIME IS CLOSE!")
 
-# Main message handler
+# Handle incoming photo+caption messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.caption:
         return
@@ -60,10 +58,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dow, mon, day, time_str, tz_abbr = match.groups()
         offset_hours, offset_minutes = 0, 0
 
-        # Parse Offset
-        offset_match = re.findall(r"(\d+)\s*h", offset_line)
-        if offset_match:
-            offset_hours = int(offset_match[0])
+        # Parse offset
+        hour_match = re.findall(r"(\d+)\s*h", offset_line)
+        if hour_match:
+            offset_hours = int(hour_match[0])
         minute_match = re.findall(r"(\d+)\s*m", offset_line)
         if minute_match:
             offset_minutes = int(minute_match[0])
@@ -102,12 +100,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Error: {e}")
         await update.message.reply_text("❌ Reminder skipped.")
 
-# Bot runner
+# Run the bot
 if __name__ == "__main__":
-    TOKEN = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(TOKEN).build()
-
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO & filters.Caption(True), handle_message))
-
     print("✅ Bot is running...")
     app.run_polling()
