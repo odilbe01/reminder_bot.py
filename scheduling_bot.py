@@ -1,6 +1,5 @@
 import logging
 import os
-import pytz
 import re
 from datetime import datetime, timedelta
 from telegram import Update
@@ -12,12 +11,12 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# ====================== CONFIGURATION ======================
+# ====================== CONFIG ======================
 
-# Telegram bot token from environment variable
-TOKEN = os.environ.get("BOT_TOKEN")  # Render > Environment Variables dan oladi
+# Get bot token from environment variable
+TOKEN = os.environ.get("BOT_TOKEN")
 
-# Timezone offset mapping
+# Timezone offsets (EDT = UTC-4, PST = UTC-8, etc.)
 timezone_mapping = {
     "EDT": -4, "EST": -5,
     "CDT": -5, "CST": -6,
@@ -40,7 +39,10 @@ scheduler.start()
 # ====================== REMINDER FUNCTION ======================
 
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=context.job.chat_id, text="🚨 PLEASE BE READY, LOAD AI TIME IS CLOSE!")
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text="🚨 PLEASE BE READY, LOAD AI TIME IS CLOSE!"
+    )
 
 # ====================== MESSAGE HANDLER ======================
 
@@ -58,15 +60,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     offset_line = lines[1].strip()
 
     try:
-        # Parse PU line: PU: Mon May 13 14:40 EDT
-        match = re.match(r"PU:\s+(\w{3}) (\w{3}) (\d{1,2}) (\d{2}:\d{2}) (\w{3})", pu_line)
+        # Format: PU: Tue May 14 2025 15:30 EDT
+        match = re.match(
+            r"PU:\s+(\w{3}) (\w{3}) (\d{1,2}) (\d{4}) (\d{2}:\d{2}) (\w{3})",
+            pu_line
+        )
         if not match:
             raise ValueError("❌ Invalid PU format.")
 
-        dow, mon, day, time_str, tz_abbr = match.groups()
-
-        # Parse offset like "2h 15m", "1h", or "30m"
+        dow, mon, day, year, time_str, tz_abbr = match.groups()
         offset_hours, offset_minutes = 0, 0
+
         hour_match = re.search(r"(\d+)\s*h", offset_line)
         if hour_match:
             offset_hours = int(hour_match.group(1))
@@ -74,11 +78,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if minute_match:
             offset_minutes = int(minute_match.group(1))
 
-        # Create datetime object in UTC
-        full_time_str = f"{mon} {day} {datetime.now().year} {time_str}"
+        full_time_str = f"{mon} {day} {year} {time_str}"
         local_dt = datetime.strptime(full_time_str, "%b %d %Y %H:%M")
         if tz_abbr not in timezone_mapping:
             raise ValueError("❌ Unsupported timezone.")
+
         utc_dt = local_dt - timedelta(hours=timezone_mapping[tz_abbr])
         reminder_time = utc_dt - timedelta(hours=offset_hours, minutes=offset_minutes)
 
@@ -93,19 +97,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("❌ Reminder skipped.")
             return
 
-        # Schedule the reminder
         scheduler.add_job(
             send_reminder,
             trigger='date',
             run_date=reminder_time,
             args=[context],
-            kwargs={'job': type("obj", (object,), {"chat_id": message.chat_id})}
+            kwargs={'job': type("job", (object,), {"chat_id": message.chat_id})}
         )
 
         await message.reply_text("✅ Reminder scheduled.")
 
     except Exception as e:
-        logging.error(f"Error: {e}")
+        logging.error(f"❌ Error: {e}")
         await message.reply_text("❌ Reminder skipped.")
 
 # ====================== ERROR HANDLER ======================
